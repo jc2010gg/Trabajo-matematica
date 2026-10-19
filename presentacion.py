@@ -1803,6 +1803,150 @@ class BanachTarski(Slide):
         self.wait(0.4)
         self.next_slide()
 
+        self.slide_final()
+
+    def slide_final(self):
+        """Slide final: Moyan, Juan y Luca detrás de la mesa haciendo backflips, el público saltando,
+        un atardecer que sale detrás y un «¡Gracias por ver!» cinematográfico (franjas de cine,
+        letras doradas que caen una por una y un destello). Dura 20 s."""
+        DUR = 20
+        rng = np.random.default_rng(42)
+
+        # --- Atardecer: cielo en degradé + sol que sube por detrás de la mesa ---
+        franjas_cielo = [
+            (0.0, ManimColor("#120822")), (0.35, ManimColor("#3B1550")), (0.6, ManimColor("#9C2F5A")),
+            (0.8, ManimColor("#E8613A")), (1.0, ManimColor("#FFB347")),
+        ]
+
+        def color_cielo(t):
+            for (t0, c0), (t1, c1) in zip(franjas_cielo, franjas_cielo[1:]):
+                if t <= t1:
+                    return interpolate_color(c0, c1, (t - t0) / (t1 - t0))
+            return franjas_cielo[-1][1]
+
+        n_bandas = 60
+        alto_banda = config.frame_height / n_bandas
+        cielo = VGroup(*[
+            Rectangle(width=config.frame_width + 0.2, height=alto_banda * 1.05, stroke_width=0)
+            .set_fill(color_cielo(k / (n_bandas - 1)), 1)
+            .move_to([0, config.frame_height / 2 - (k + 0.5) * alto_banda, 0])
+            for k in range(n_bandas)
+        ])
+        cielo.set_opacity(0)
+        sol = VGroup(*[
+            Circle(radius=r, stroke_width=0).set_fill(c, o)
+            for r, c, o in ((3.2, "#FF8C42", 0.10), (2.6, "#FF9F4A", 0.16), (2.1, "#FFB65C", 0.25),
+                            (1.7, "#FFD27F", 1.0), (1.45, "#FFE3A3", 1.0))
+        ])
+        SOL_INI, SOL_FIN = np.array([0, -6.5, 0]), np.array([0, 0.9, 0])
+        sol.move_to(SOL_INI)
+
+        mesa = RoundedRectangle(width=7.2, height=2.8, corner_radius=0.12, stroke_width=5, color=WHITE)
+        mesa.set_fill(BLACK, 1).move_to([0, -2.05, 0])
+        oradores = [persona_con_cara(n, 1.15) for n in ("moyan", "juan", "luca")]
+        for p, x in zip(oradores, (-2.4, 0, 2.4)):
+            p.shift(np.array([x, -0.55, 0]) - p[1].get_bottom())
+        # Público a los costados, amontonado; los de más abajo quedan adelante
+        lugares = []
+        for lado in (-1, 1):
+            for fila, y in enumerate((-1.75, -2.45, -3.15, -3.85)):
+                for k in range(3 if fila % 2 == 0 else 2):
+                    x = lado * (4.25 + (k + (0.5 if fila % 2 else 0)) * 1.0 + rng.uniform(-0.15, 0.15))
+                    lugares.append((x, y + rng.uniform(-0.1, 0.1)))
+        lugares.sort(key=lambda q: -q[1])
+        publico = VGroup()
+        for x, y in lugares:
+            p = persona(0.82)
+            p.shift(np.array([x, y, 0]) - p[1].get_bottom())
+            publico.add(p)
+        originales = [p.copy() for p in publico]
+
+        # --- Título cinematográfico ---
+        DORADO = ManimColor("#FFD27F")
+        titulo = Text("¡Gracias por ver!", font=FUENTE).scale(1.3).move_to([0, 2.75, 0])
+        titulo.set_color_by_gradient(ManimColor("#FFF1C9"), DORADO, ManimColor("#FFB347"))
+        letras = list(titulo)
+        letras_fin = [l.copy() for l in letras]
+        for l in letras:
+            l.set_opacity(0)
+        halo = titulo.copy().set_fill(opacity=0).set_stroke(ManimColor("#FFB347"), width=14, opacity=0)
+        destello = Rectangle(width=0.35, height=1.6, stroke_width=0).set_fill(WHITE, 0.0).rotate(0.35)
+        barra_sup = Rectangle(width=config.frame_width + 0.2, height=0.75, stroke_width=0).set_fill(BLACK, 1)
+        barra_inf = barra_sup.copy()
+        barra_sup.move_to([0, config.frame_height / 2 + 0.4, 0])
+        barra_inf.move_to([0, -config.frame_height / 2 - 0.4, 0])
+        sup_ini, inf_ini = barra_sup.get_center(), barra_inf.get_center()
+
+        # Saltos periódicos del público: cada uno con su ritmo y su fase
+        n_pub = rng.integers(30, 42, len(publico))
+        f_pub = rng.uniform(0, 1, len(publico))
+        n_ora = [36, 38, 36]
+        f_ora = [0.0, 0.33, 0.66]
+        # Backflips de los tres de arriba (segundos de inicio por orador)
+        flips_ora = [[2.2, 7.6, 12.0, 16.4], [3.4, 9.0, 12.0, 17.0], [4.6, 10.4, 12.0, 17.6]]
+        D_FLIP = 1.15
+        orig_ora = [[parte.copy() for parte in p] for p in oradores]
+
+        def altura(n, f, a, h):
+            return h * abs(np.sin(PI * (n * a + f)))
+
+        def tramo(t, t0, t1):
+            return min(1, max(0, (t - t0) / (t1 - t0)))
+
+        def animar(mob, a):
+            t = 0.8 + a * (DUR - 0.8)
+            # Atardecer
+            s_cielo = smooth(tramo(t, 0.8, 7.0))
+            cielo.set_fill(opacity=s_cielo)
+            sol.move_to(interpolate(SOL_INI, SOL_FIN, smooth(tramo(t, 0.8, 9.0))))
+            # Público
+            for i, (p, o) in enumerate(zip(publico, originales)):
+                p.become(o.copy().shift(UP * altura(n_pub[i], f_pub[i], a, 0.28)))
+            # Oradores con backflips
+            for i, p in enumerate(oradores):
+                dy, giro = altura(n_ora[i], f_ora[i], a, 0.32), 0.0
+                for t0 in flips_ora[i]:
+                    if t0 <= t <= t0 + D_FLIP:
+                        s = (t - t0) / D_FLIP
+                        dy = 1.6 * 4 * s * (1 - s)
+                        giro = TAU * smooth(s)
+                c = orig_ora[i][1].get_center()
+                for parte, orig in zip(p, orig_ora[i]):
+                    m = orig.copy().rotate(giro, about_point=c).shift(UP * dy)
+                    if isinstance(parte, ImageMobject):
+                        parte.points = m.points
+                    else:
+                        parte.become(m)
+            # Franjas de cine
+            sb = smooth(tramo(t, 2.0, 3.2))
+            barra_sup.move_to(sup_ini + DOWN * 0.75 * sb)
+            barra_inf.move_to(inf_ini + UP * 0.75 * sb)
+            # Letras que caen desde arriba, una por una
+            for k, (l, fin) in enumerate(zip(letras, letras_fin)):
+                s = tramo(t, 3.0 + 0.09 * k, 3.0 + 0.09 * k + 0.9)
+                e = rate_functions.ease_out_back(s) if s > 0 else 0
+                m = fin.copy().scale(1 + 0.8 * (1 - s)).shift(UP * 2.2 * (1 - e))
+                m.set_opacity(min(1, 1.6 * s))
+                l.become(m)
+            # Halo que respira y destello que cruza el título
+            sh = tramo(t, 5.0, 6.0)
+            halo.set_stroke(opacity=sh * (0.22 + 0.1 * np.sin(2.2 * t)))
+            sd = tramo(t, 6.2, 7.4)
+            destello.move_to(titulo.get_center() + RIGHT * interpolate(-4.8, 4.8, smooth(sd)))
+            destello.set_fill(opacity=0.55 * np.sin(PI * sd))
+
+        self.next_slide()
+        self.add(cielo, sol)
+        self.play(FadeIn(mesa), *[FadeIn(p) for p in oradores], FadeIn(publico), run_time=0.8)
+        self.add(halo, *letras, destello, barra_sup, barra_inf)
+        self.play(
+            UpdateFromAlphaFunc(Group(cielo, sol, mesa, *oradores, publico, halo, *letras, destello, barra_sup, barra_inf),
+                                animar),
+            run_time=DUR - 0.8,
+            rate_func=linear,
+        )
+        self.next_slide()
+
     def loop_discusion(self, personas, insultos):
         """Cabezas que suben y bajan desincronizadas + texto que tiembla. Termina igual que empieza."""
         cabezas = [p[0] for p in personas]
@@ -1824,3 +1968,10 @@ class BanachTarski(Slide):
                 l.become(o.copy().shift(0.035 * (d[0] * RIGHT + d[1] * UP)).rotate(0.07 * d[2]))
 
         self.play(UpdateFromAlphaFunc(VGroup(*cabezas, *letras), discutir), run_time=3, rate_func=linear)
+
+
+class SlideFinal(BanachTarski):
+    """Prueba rápida: solo la slide final."""
+
+    def construct(self):
+        self.slide_final()
